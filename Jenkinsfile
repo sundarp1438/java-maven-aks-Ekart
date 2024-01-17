@@ -1,59 +1,102 @@
 pipeline {
     agent any
+    
     tools{
-        jdk  'jdk11'
+        jdk  'jdk17'
         maven  'maven3'
     }
     
-    environment{
+    environment {
         SCANNER_HOME= tool 'sonar-scanner'
     }
-    
+
     stages {
         stage('Git Checkout') {
             steps {
-                git branch: 'main', changelog: false, credentialsId: '15fb69c3-3460-4d51-bd07-2b0545fa5151', poll: false, url: 'https://github.com/jaiswaladi246/Shopping-Cart.git'
+                git branch: 'main', url: 'https://github.com/Sayantan2k24/java-maven-eks-Ekart.git'
             }
         }
         
-        stage('COMPILE') {
+        stage('Compile') {
             steps {
-                sh "mvn clean compile -DskipTests=true"
+                sh "mvn compile"
             }
         }
         
-        stage('OWASP Scan') {
+        stage('Unit Tests') {
             steps {
-                dependencyCheck additionalArguments: '--scan ./ ', odcInstallation: 'DP'
+                sh "mvn test -DskipTests=true"
+            }
+        }
+        
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('sonar') {
+                    sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectKey=EKART -Dsonar.projectName=EKART \
+                    -Dsonar.java.binaries=. '''
+                    
+                }
+            }
+            
+        }
+        
+        stage('OWASP DEpendency Check') {
+            steps {
+                dependencyCheck additionalArguments: ' --scan ./', odcInstallation: 'DC'
                 dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-            }
-        }
-        
-        stage('Sonarqube') {
-            steps {
-                withSonarQubeEnv('sonar-server'){
-                   sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=Shopping-Cart \
-                   -Dsonar.java.binaries=. \
-                   -Dsonar.projectKey=Shopping-Cart '''
-               }
             }
         }
         
         stage('Build') {
             steps {
-                sh "mvn clean package -DskipTests=true"
+                sh "mvn package -DskipTests=true"
             }
         }
         
-        stage('Docker Build & Push') {
+        stage('Deploy To Nexus') {
             steps {
-                script{
-                    withDockerRegistry(credentialsId: '2fe19d8a-3d12-4b82-ba20-9d22e6bf1672', toolName: 'docker') {
-                        
+                withMaven(globalMavenSettingsConfig: 'global-maven', jdk: 'jdk17', maven: 'maven3', mavenSettingsConfig: '', traceability: true) {
+                    sh "mvn deploy -DskipTests=true"
+                }
+            }
+        }
+        
+        stage('Build & Tag Docker Image') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-hub-cred', toolName: 'docker') {
                         sh "docker build -t shopping-cart -f docker/Dockerfile ."
-                        sh "docker tag  shopping-cart adijaiswal/shopping-cart:latest"
-                        sh "docker push adijaiswal/shopping-cart:latest"
+                        sh "docker tag  shopping-cart sayantan2k21/shopping-cart:latest"
+                        
                     }
+                }
+            }
+        }
+        
+        stage('Trivy Scan') {
+            steps {
+                sh "trivy image sayantan2k21/shopping-cart:latest > trivy-report.txt "
+                
+            }
+        }
+        
+        stage('Push The Docker Image') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-hub-cred', toolName: 'docker') {
+                        sh "docker push sayantan2k21/shopping-cart:latest"
+                    }
+                }
+                 
+            }
+        }
+        
+        stage('Kubernetes Deploy') {
+            steps {
+                withKubeConfig(caCertificate: '', clusterName: '', contextName: '', credentialsId: 'k8-token', namespace: 'webapps', restrictKubeConfigAccess: false, serverUrl: 'https://172.31.15.138:6443') {
+                    sh "kubectl apply -f deploymentservice.yml -n webapps"
+                    sh "kubectl get svc -n webapps"
+    
                 }
             }
         }
@@ -61,3 +104,7 @@ pipeline {
         
     }
 }
+    
+        
+    
+    
