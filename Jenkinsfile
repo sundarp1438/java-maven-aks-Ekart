@@ -54,7 +54,7 @@ pipeline {
             } 
         }
         
-        stage('OWASP DEpendency Check') {
+        stage('OWASP Dependency Check') {
             steps {
                 dependencyCheck additionalArguments: ' --scan ./', odcInstallation: 'owasp-dp-check'
                 dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
@@ -119,10 +119,15 @@ pipeline {
         
         stage('Kubernetes Deploy') {
             steps {
-                withKubeConfig(caCertificate: '', clusterName: '', contextName: '', credentialsId: 'k8-token', namespace: 'webapps', restrictKubeConfigAccess: false, serverUrl: 'https://172.31.15.138:6443') {
-                    sh "kubectl apply -f deploymentservice.yml -n webapps"
-                    sh "kubectl get svc -n webapps"
+                script{
+                    dir('Kubernetes') {
+                        withKubeConfig(caCertificate: '', clusterName: '', contextName: '', credentialsId: 'k8s', namespace: '', restrictKubeConfigAccess: false, serverUrl: '') {
+                            sh "kubectl apply -f deploymentservice.yml -n webapps"
+                            sh "kubectl get svc -n webapps"
+                        }
     
+                
+                    }
                 }
             }
         }
