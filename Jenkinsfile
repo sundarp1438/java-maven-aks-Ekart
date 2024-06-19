@@ -1,19 +1,26 @@
 pipeline {
-    agent any
+    agent {
+        label 'rocky_9'
+    }
     
     tools{
-        jdk  'jdk17'
-        maven  'maven3'
+        jdk  'JAVA_HOME'
+        maven  'MAVEN_HOME'
     }
     
     environment {
-        SCANNER_HOME= tool 'sonar-scanner'
+        SCANNER_HOME= tool 'sonar-server'
     }
 
     stages {
+        stage('Workspace Cleaning'){
+            steps{
+                cleanWs()
+            }
+        }
         stage('Git Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/Sayantan2k24/java-maven-eks-Ekart.git'
+                git branch: 'main', url: 'https://github.com/sundarp1438/java-maven-aks-Ekart.git'
             }
         }
         
@@ -29,21 +36,32 @@ pipeline {
             }
         }
         
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv('sonar') {
-                    sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectKey=EKART -Dsonar.projectName=EKART \
-                    -Dsonar.java.binaries=. '''
-                    
+        stage("Sonarqube Analysis"){
+            steps{
+                withSonarQubeEnv('sonar-server') {
+                    sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=EKART \
+                    -Dsonar.projectKey=EKART \
+                    '''
                 }
             }
-            
+        }
+        stage("Quality Gate"){
+           steps {
+                script {
+                    waitForQualityGate abortPipeline: false, credentialsId: 'sonar-token' 
+                }
+            } 
         }
         
         stage('OWASP DEpendency Check') {
             steps {
-                dependencyCheck additionalArguments: ' --scan ./', odcInstallation: 'DC'
+                dependencyCheck additionalArguments: ' --scan ./', odcInstallation: 'owasp-dp-check'
                 dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+        }
+        stage('TRIVY FS SCAN') {
+            steps {
+                sh "trivy fs . > trivyfs.txt"
             }
         }
         
@@ -55,7 +73,7 @@ pipeline {
         
         stage('Deploy To Nexus') {
             steps {
-                withMaven(globalMavenSettingsConfig: 'global-maven', jdk: 'jdk17', maven: 'maven3', mavenSettingsConfig: '', traceability: true) {
+                withMaven(globalMavenSettingsConfig: 'global-maven', jdk: 'JAVA_HOME', maven: 'MAVEN_HOME', mavenSettingsConfig: '', traceability: true) {
                     sh "mvn deploy -DskipTests=true"
                 }
             }
@@ -64,18 +82,25 @@ pipeline {
         stage('Build & Tag Docker Image') {
             steps {
                 script {
-                    withDockerRegistry(credentialsId: 'docker-hub-cred', toolName: 'docker') {
+                    withDockerRegistry(credentialsId: 'DockerHubPass', toolName: 'docker') {
                         sh "docker build -t shopping-cart -f docker/Dockerfile ."
-                        sh "docker tag  shopping-cart sayantan2k21/shopping-cart:latest"
+                        sh "docker tag  shopping-cart sundarp1985/shopping-cart:latest"
                         
                     }
+                }
+            }
+        }
+        stage('Containerize And Test') {
+            steps {
+                script{
+                    sh 'docker run -d --name shopping-cart sundarp1985/shopping-cart:latest && sleep 10 && docker stop shopping-cart'
                 }
             }
         }
         
         stage('Trivy Scan') {
             steps {
-                sh "trivy image sayantan2k21/shopping-cart:latest > trivy-report.txt "
+                sh "trivy image sundarp1985/shopping-cart:latest > trivy-report.txt "
                 
             }
         }
@@ -83,8 +108,8 @@ pipeline {
         stage('Push The Docker Image') {
             steps {
                 script {
-                    withDockerRegistry(credentialsId: 'docker-hub-cred', toolName: 'docker') {
-                        sh "docker push sayantan2k21/shopping-cart:latest"
+                    withDockerRegistry(credentialsId: 'DockerHubPass', toolName: 'docker') {
+                        sh "docker push sundarp1985/shopping-cart:latest"
                     }
                 }
                  
