@@ -41,7 +41,7 @@ pipeline {
                 withSonarQubeEnv('sonar-server') {
                     sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=EKART \
                     -Dsonar.projectKey=EKART \
-                    --Dsonar.exclusions=**/*.java
+                    -Dsonar.exclusions=**/*.java
                     '''
                 }
             }
